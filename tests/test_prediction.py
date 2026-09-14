@@ -13,10 +13,10 @@ Objectif pÃ©dagogique :
 """
 
 import math
+
 import pytest
 
 from app.utils import predict
-
 
 # -----------------------------------------------------------------------------
 # Cas nominaux : entrÃ©es valides et reprÃ©sentatives
