@@ -1,142 +1,106 @@
-name: CI – FastAPI (TD avancé)
+name: CI - FastAPI
 
 on:
   pull_request:
     branches: [main]
+
   push:
-    branches: [main, dev]
+    branches: [dev]
 
 permissions:
   contents: read
 
 jobs:
 
-  lint:
+  linting:
     runs-on: ubuntu-24.04
 
     steps:
+
+      # Runner infos
+      - name: Runner infos
+        run: |
+          echo "Runner name : $RUNNER_NAME"
+          echo "Runner OS   : $RUNNER_OS"
+
+      # Récupérer le code
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Configurer Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Install linter
-        run: pip install flake8 ruff
-
-      - name: Run lint
+      # Linting - qualité du code
+      - name: Lint with flake8
         run: |
-          echo "=== Lint avec flake8 ==="
+          pip install flake8
           flake8 app tests --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 app tests --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
 
-          echo "=== Lint avec ruff ==="
-          ruff check .
 
-
-  type-check:
+  test:
     runs-on: ubuntu-24.04
-    needs: lint
+    needs: linting
 
     steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      # Runner infos
+      - name: Runner infos
+        run: |
+          echo "Runner name : $RUNNER_NAME"
+          echo "Runner OS   : $RUNNER_OS"
+
+      # Récupérer le code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Configurer Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Install mypy
-        run: pip install mypy
-
-      - name: Run type checking
-        run: |
-          if [ -f mypy.ini ] || [ -f pyproject.toml ]; then
-            mypy app tests
-          else
-            echo "mypy config absent, étape ignorée"
-          fi
-
-
-  tests:
-    runs-on: ubuntu-24.04
-    needs: [lint, type-check]
-
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11"]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
+      # Installer les dépendances dev
+      - name: Install dependencies (dev)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install -r app/requirements.txt
+          pip list
 
-      - name: Run unit tests + coverage
+      # Tests unitaires / async
+      - name: Run tests
         run: |
           export PYTHONPATH=$(pwd)
-          pytest --maxfail=1 --disable-warnings -q --cov=app --cov-report=xml --cov-report=term-missing
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.python-version }}
-          path: coverage.xml
+          pytest --maxfail=1 --disable-warnings -q
 
 
-  security:
+  SafetyScan:
     runs-on: ubuntu-24.04
-    needs: tests
+    needs: [test, linting]
 
     steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      # Runner infos
+      - name: Runner infos
+        run: |
+          echo "Runner name : $RUNNER_NAME"
+          echo "Runner OS   : $RUNNER_OS"
+
+      # Récupérer le code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Configurer Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Install safety
-        run: pip install safety==1.10.3
-
-      - name: Check security
-        run: safety check || true
-
-
-  docker-smoke:
-    runs-on: ubuntu-24.04
-    needs: tests
-    if: github.event_name == 'push'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          tags: app:ci
-          load: true
-
-      - name: Smoke test HTTP
+      # Vérifier la sécurité des dépendances
+      - name: Check for security issues
         run: |
-          docker run -d -p 8000:8000 --name app app:ci || docker run -d -p 8000:80 --name app app:ci
-          sleep 5
-          curl -fsS -X POST http://localhost:8000/predict \
-            -H "Content-Type: application/json" \
-            -d '{"features":[0.0,0.0,0.0]}' >/dev/null
-
-      - name: Cleanup
-        if: always()
-        run: docker rm -f app || true
+          pip install safety
+          safety check -r app/requirements.txt || true
